@@ -1,6 +1,12 @@
 package cache
 
-import "time"
+import (
+	"reflect"
+	"sync"
+	"time"
+
+	"github.com/ForbiddenR/jxutils/buffer"
+)
 
 type SharedInformer interface {
 	// AddEventHandler adds event handler to the shared informer using
@@ -37,10 +43,78 @@ type SharedInformer interface {
 	IsStopped() bool
 }
 
-
 type ResourceEventHandlerRegisteration interface {
 	// HasSynced reports if both the parent has synced and all pre-sync
 	// events have been dellivered.
 	HasSynced() bool
 }
 
+type processorListener[T any] struct {
+	nextCh chan T
+	addCh  chan T
+
+	handler ResourceEventHandler
+
+	// pendingNotifications is an unbounded ring buffer that holds all notifications not yet distrubuted.
+	// There is one per listener, but a failing/stalled listener will hav infinite pendingNotifications
+	// added until we OOM.
+	pendingNotifications buffer.RingGrowing[T]
+
+	requestedResyncPeriod time.Duration
+
+	resyncPeriod time.Duration
+
+	nextResync time.Time
+
+	resyncLock sync.Mutex
+}
+
+func newProcessListener[T any](handler ResourceEventHandler, requestedResyncPeriod, resyncPeriod time.Duration, now time.Time, bufferSize int) *processorListener[T] {
+	ret := &processorListener[T]{
+		nextCh:                make(chan T),
+		addCh:                 make(chan T),
+		handler:               handler,
+		pendingNotifications:  *buffer.NewRingGrowing[T](bufferSize),
+		requestedResyncPeriod: requestedResyncPeriod,
+		resyncPeriod:          resyncPeriod,
+	}
+
+	return ret
+}
+
+func (p *processorListener[T]) add(notification T) {
+	p.addCh <- notification
+}
+
+func (p *processorListener[T]) pop() {
+	defer close(p.nextCh) // Tell .run() to stop
+
+	var nextCh chan<- T
+	var notification T
+	for {
+		select {
+		case nextCh <- notification:
+			// Notification dispatched
+			var ok bool
+			notification, ok = p.pendingNotifications.ReadOne()
+			if !ok { // Nothing to pop
+				nextCh = nil // Disable this select case
+			}
+		case notificationToAdd, ok := <-p.addCh:
+			if !ok {
+				return
+			}
+			if reflect.ValueOf(notification).IsNil() {
+				// Optimize the case -skip adding to pendingNotifications
+				notification = notificationToAdd
+				nextCh = p.nextCh
+			}else {
+				p.pendingNotifications.WriteOne(notificationToAdd)
+			}
+		}
+	}
+}
+
+func (p *processorListener[T]) run() {
+	// stopCh := make(chan struct{})
+}
