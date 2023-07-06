@@ -14,10 +14,50 @@ type Interface interface {
 	Done(item any)
 	ShutDown()
 	ShutDownWithDrain()
-	ShttingDown() bool
+	ShuttingDown() bool
 }
 
+// QueueConfig specifies optional configurations to customize an Interface.
+type QueueConfig struct {
+	// Name for the queue. If unnamed, the metrics will not be registered.
+	Name string
 
+	Clock clock.WithTicker
+}
+
+// New constructs a new work queue.
+func New() *Type {
+	return NewWithConfig(QueueConfig{
+		Name: "",
+	})
+}
+
+// NewWithConfig constructs a new workqueue with ability to
+// customize different properties.
+func NewWithConfig(config QueueConfig) *Type {
+	return newQueueWithConfig(config, defaultUnfinishedWorkUpdatePeriod)
+}
+
+// NewNamed creates a new named queue.
+// Deprecated: Use NewWithConfig instead.
+func NewNamed(name string) *Type {
+	return NewWithConfig(QueueConfig{
+		Name: name,
+	})
+}
+
+// newQueueWithConfig constructs a new named workqueue
+// with the ability to customize different properties for testing purposes.
+func newQueueWithConfig(config QueueConfig, updatePeriod time.Duration) *Type {
+	if config.Clock == nil {
+		config.Clock = clock.RealClock{}
+	}
+
+	return newQueue(
+		config.Clock,
+		updatePeriod,
+	)
+}
 
 func newQueue(c clock.WithTicker, updatePeriod time.Duration) *Type {
 	t := &Type{
@@ -124,7 +164,7 @@ func (q *Type) Get() (item any, shutDown bool) {
 	}
 	if len(q.queue) == 0 {
 		// We must be shutting down.
-		return
+		return nil, true
 	}
 
 	item = q.queue[0]
