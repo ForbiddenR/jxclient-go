@@ -4,6 +4,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 type RateLimiter[T comparable] interface {
@@ -14,6 +16,32 @@ type RateLimiter[T comparable] interface {
 	Forget(item T)
 	// NumRequeues returns back how many failures the item has had.
 	NumRequeues(item T) int
+}
+
+func DefaultContrllerRateLimiter[T comparable]() RateLimiter[T] {
+	return NewMaxOfRateLimiter[T](
+		NewItemExponentialFailureRateLimiter[T](5*time.Millisecond, 1000*time.Second),
+		// 10 qps, 100bucket size. This is only for retry speed and its only the overall factor(not per item)
+		&BucketRateLimiter[T]{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+	)
+}
+
+// BucketRateLimiter adapts a standard bucket to the workqueue ratelimiter API
+type BucketRateLimiter[T comparable] struct {
+	*rate.Limiter
+}
+
+var _ RateLimiter[any] = &BucketRateLimiter[any]{}
+
+func (r *BucketRateLimiter[T]) When(item T) time.Duration {
+	return r.Limiter.Reserve().Delay()
+}
+
+func (r *BucketRateLimiter[T]) NumRequeues(item T) int {
+	return 0
+}
+
+func (r *BucketRateLimiter[T]) Forget(item T) {
 }
 
 type ItemExponentialFailureRateLimiter[T comparable] struct {
@@ -117,6 +145,69 @@ func (r *ItemFastSlowRateLimiter[T]) Forget(item T) {
 	delete(r.failures, item)
 }
 
-type MaxOfRateLimiter[T comparable] struct{
+// NewMaxOfRateLimiter calls every RateLimiter and returns the worst case respose
+// When used with a token bucket limiter, the burst could be apparently exceeded in cases where particular items
+// were separately delayed a longer time.
+type MaxOfRateLimiter[T comparable] struct {
 	limiters []RateLimiter[T]
+}
+
+func (r *MaxOfRateLimiter[T]) When(item T) time.Duration {
+	ret := time.Duration(0)
+	for _, limiter := range r.limiters {
+		curr := limiter.When(item)
+		if curr > ret {
+			ret = curr
+		}
+	}
+
+	return ret
+}
+
+func NewMaxOfRateLimiter[T comparable](limiters ...RateLimiter[T]) RateLimiter[T] {
+	return &MaxOfRateLimiter[T]{limiters: limiters}
+}
+
+func (r *MaxOfRateLimiter[T]) NumRequeues(item T) int {
+	ret := 0
+	for _, limiter := range r.limiters {
+		curr := limiter.NumRequeues(item)
+		if curr > ret {
+			ret = curr
+		}
+	}
+
+	return ret
+}
+
+func (r *MaxOfRateLimiter[T]) Forget(item T) {
+	for _, limiter := range r.limiters {
+		limiter.Forget(item)
+	}
+}
+
+// WithMaxWaitRateLimiter have maxDelay which avoids waiting too long
+type WithMaxWaitRateLimiter[T comparable] struct {
+	limiter  RateLimiter[T]
+	maxDelay time.Duration
+}
+
+func NewWithMaxWaitRateLimiter[T comparable](limiter RateLimiter[T], maxDelay time.Duration) RateLimiter[T] {
+	return &WithMaxWaitRateLimiter[T]{limiter: limiter, maxDelay: maxDelay}
+}
+
+func (w WithMaxWaitRateLimiter[T]) When(item T) time.Duration {
+	delay := w.limiter.When(item)
+	if delay > w.maxDelay {
+		return w.maxDelay
+	}
+	return delay
+}
+
+func (w WithMaxWaitRateLimiter[T]) Forget(item T) {
+	w.limiter.Forget(item)
+}
+
+func (w WithMaxWaitRateLimiter[T]) NumRequeues(item T) int {
+	return w.limiter.NumRequeues(item)
 }
