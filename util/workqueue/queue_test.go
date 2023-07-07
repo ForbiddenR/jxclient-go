@@ -10,16 +10,16 @@ import (
 
 func TestBasic(t *testing.T) {
 	tests := []struct {
-		queue         *workqueue.Type
-		queueShutDown func(workqueue.Interface)
+		queue         *workqueue.Type[any]
+		queueShutDown func(workqueue.Interface[any])
 	}{
 		{
-			queue:         workqueue.New(),
-			queueShutDown: workqueue.Interface.ShutDown,
+			queue:         workqueue.New[any](),
+			queueShutDown: workqueue.Interface[any].ShutDown,
 		},
 		{
-			queue:         workqueue.New(),
-			queueShutDown: workqueue.Interface.ShutDownWithDrain,
+			queue:         workqueue.New[any](),
+			queueShutDown: workqueue.Interface[any].ShutDownWithDrain,
 		},
 	}
 	for _, test := range tests {
@@ -74,16 +74,16 @@ func TestBasic(t *testing.T) {
 
 func TestAddWhileProcessing(t *testing.T) {
 	tests := []struct {
-		queue         *workqueue.Type
-		queueShutDown func(workqueue.Interface)
+		queue         *workqueue.Type[any]
+		queueShutDown func(workqueue.Interface[any])
 	}{
 		{
-			queue:         workqueue.New(),
-			queueShutDown: workqueue.Interface.ShutDown,
+			queue:         workqueue.New[any](),
+			queueShutDown: workqueue.Interface[any].ShutDown,
 		},
 		{
-			queue:         workqueue.New(),
-			queueShutDown: workqueue.Interface.ShutDownWithDrain,
+			queue:         workqueue.New[any](),
+			queueShutDown: workqueue.Interface[any].ShutDownWithDrain,
 		},
 	}
 	for _, test := range tests {
@@ -133,7 +133,7 @@ func TestAddWhileProcessing(t *testing.T) {
 }
 
 func TestLen(t *testing.T) {
-	q := workqueue.New()
+	q := workqueue.New[any]()
 	q.Add("foo")
 	if e, a := 1, q.Len(); e != a {
 		t.Errorf("Expected %v, got %v", e, a)
@@ -149,7 +149,7 @@ func TestLen(t *testing.T) {
 }
 
 func TestReinsert(t *testing.T) {
-	q := workqueue.New()
+	q := workqueue.New[any]()
 	q.Add("foo")
 
 	// Start processing
@@ -180,7 +180,7 @@ func TestReinsert(t *testing.T) {
 
 func TestQueueDrainageUsingShutDownWithDrain(t *testing.T) {
 
-	q := workqueue.New()
+	q := workqueue.New[any]()
 
 	q.Add("foo")
 	q.Add("bar")

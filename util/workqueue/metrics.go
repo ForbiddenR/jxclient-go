@@ -3,10 +3,10 @@ package workqueue
 // This file provides abstractions for setting the provider (e.g., prometheus)
 // of metrics.
 
-type queueMetrics interface {
-	add(item t)
-	get(item t)
-	done(item t)
+type queueMetrics[T comparable] interface {
+	add(item T)
+	get(item T)
+	done(item T)
 	updateUnfinishedWork()
 }
 
