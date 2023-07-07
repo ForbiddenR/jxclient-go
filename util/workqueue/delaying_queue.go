@@ -48,16 +48,6 @@ func NewDelayingQueueWithConfig[T comparable](config DelayingQueueConfig[T]) Del
 	return newDelayingQueue(config.Clock, config.Queue, config.Name)
 }
 
-// NewDelayingQueueWithCustomClock constructs a new named workqueue
-// with ability to inject real or fake clock for testing purposes.
-// Deprecated: UseDelayingQueueWithConfig instead.
-func NewDelayingQueueWithCustomClock[T comparable](clock clock.WithTicker, name string) DelayingInterface[T] {
-	return NewDelayingQueueWithConfig[T](DelayingQueueConfig[T]{
-		Name: name,
-		Clock: clock,
-	})
-}
-
 func newDelayingQueue[T comparable](clock clock.WithTicker, q Interface[T], jjname string) *delayingType[T] {
 	ret := &delayingType[T]{
 		Interface:       q,
